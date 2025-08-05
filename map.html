@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mouza Map Search</title>
+  <style>
+    body { font-family: system-ui,-apple-system,BlinkMacSystemFont,sans-serif; background:#f5f7fa; margin:0; padding:0; }
+    .container { max-width: 700px; margin: 40px auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+    h2 { margin-top:0; }
+    label { display: block; margin-top: 16px; font-weight: 600; }
+    select, input { width: 100%; padding: 10px 12px; margin-top: 6px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; box-sizing:border-box; }
+    button { padding: 12px 18px; border:none; border-radius:8px; font-size:16px; font-weight:600; transition:background .2s; cursor:pointer; }
+    #searchBtn { margin-top: 20px; background:#2563eb; color:#fff; }
+    #searchBtn:disabled { background: #94a3b8; cursor: not-allowed; }
+    #downloadBtn {
+      margin-top: 12px;
+      background: #16a34a;
+      color: #fff;
+    }
+    #downloadBtn:hover {
+      background: #15803d;
+    }
+    #payBtn {
+      margin-top: 12px;
+      background: #f59e0b;
+      color: #fff;
+    }
+    iframe { width:100%; height:500px; border:1px solid #e2e8f0; border-radius:8px; margin-top:16px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>মৌজা ম্যাপ সার্চ (চট্টগ্রাম বিভাগ)</h2>
+
+    <label for="division">বিভাগ</label>
+    <select id="division" required disabled>
+      <option value="chattogram" selected>চট্টগ্রাম</option>
+    </select>
+
+    <label for="district">জেলা</label>
+    <select id="district" required disabled>
+      <option value="chittagong" selected>চট্টগ্রাম</option>
+    </select>
+
+    <label for="upazila">উপজেলা</label>
+    <select id="upazila" required>
+      <option value="">উপজেলা নির্বাচন করুন</option>
+    </select>
+
+    <label for="mouza">মৌজা (ঐচ্ছিক)</label>
+    <select id="mouza">
+      <option value="">মৌজা নির্বাচন করুন (ঐচ্ছিক)</option>
+    </select>
+
+    <label for="jl">জেল নম্বর (J.L. Number)</label>
+    <input type="text" id="jl" placeholder="উদাহরণ: 135" />
+
+    <button id="searchBtn" onclick="searchMap()">দেখুন</button>
+
+    <iframe id="pdfViewer" class="hidden"></iframe>
+
+    <!-- Download Button -->
+    <button id="downloadBtn" class="hidden" onclick="downloadPDF()">ডাউনলোড</button>
+
+    <!-- Payment Button -->
+    <button id="payBtn" class="hidden" onclick="startPayment()">💳 পেমেন্ট করুন</button>
+  </div>
+
+  <script>
+    let isPaid = false; // পেমেন্ট হয়েছে কিনা ট্র্যাক করবে
+
+    // ডেটা: চট্টগ্রাম জেলার উপজেলা ও মৌজা (key = ইংরেজি, value = বাংলা নাম)
+    const mouzaData = {
+      "sitakunda": ["আমবাড়ি", "কলাতলী", "মিরসরাই"],
+      "anwara": ["কালাবাগান", "চাঁদগাঁও", "আনোয়ারা"],
+      "panchlaish": ["পাঁচলাইশ", "বসুরহাট"]
+      // অন্যান্য উপজেলা ও মৌজা এখানে পরে যোগ করবেন
+    };
+
+    // উপজেলা বাংলা নাম ম্যাপ (key ইংরেজি)
+    const upazilaNames = {
+      "sitakunda": "সীতাকুণ্ড",
+      "anwara": "আনোয়ারা",
+      "panchlaish": "পাঁচলাইশ"
+    };
+
+    const upazilaSelect = document.getElementById("upazila");
+    const mouzaSelect = document.getElementById("mouza");
+    const pdfViewer = document.getElementById("pdfViewer");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const payBtn = document.getElementById("payBtn");
+
+    // উপজেলা লোড করা
+    function loadUpazilas() {
+      upazilaSelect.innerHTML = '<option value="">উপজেলা নির্বাচন করুন</option>';
+      mouzaSelect.innerHTML = '<option value="">মৌজা নির্বাচন করুন (ঐচ্ছিক)</option>';
+      pdfViewer.classList.add('hidden');
+      downloadBtn.classList.add('hidden');
+      payBtn.classList.add('hidden');
+
+      for (const key in mouzaData) {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = upazilaNames[key] || key;
+        upazilaSelect.appendChild(option);
+      }
+    }
+
+    // উপজেলা পরিবর্তন হলে মৌজা লোড করা
+    upazilaSelect.addEventListener('change', () => {
+      const upazila = upazilaSelect.value;
+      mouzaSelect.innerHTML = '<option value="">মৌজা নির্বাচন করুন (ঐচ্ছিক)</option>';
+      pdfViewer.classList.add('hidden');
+      downloadBtn.classList.add('hidden');
+      payBtn.classList.add('hidden');
+
+      if (upazila && mouzaData[upazila]) {
+        mouzaData[upazila].forEach(mouza => {
+          const option = document.createElement("option");
+          option.value = mouza;
+          option.textContent = mouza;
+          mouzaSelect.appendChild(option);
+        });
+      }
+    });
+
+    // সার্চ বাটন ক্লিক করলে
+    async function searchMap() {
+      const division = document.getElementById('division').value.trim();
+      const district = document.getElementById('district').value.trim();
+      const upazila = upazilaSelect.value.trim();
+      const mouza = mouzaSelect.value.trim();
+      const jl = document.getElementById('jl').value.trim();
+
+      if (!division || !district || !upazila || (mouza === "" && jl === "")) {
+        alert('অনুগ্রহ করে বিভাগ, জেলা, উপজেলা এবং অন্তত মৌজা বা JL নম্বর দিন।');
+        return;
+      }
+
+      const filename = jl !== "" ? jl + ".pdf" : mouza + ".pdf";
+      const pdfPath = `pdfs/${division}/${district}/${upazila}/${filename}`;
+
+      try {
+        const res = await fetch(pdfPath, { method: 'HEAD' });
+        if (res.ok) {
+          pdfViewer.src = pdfPath;
+          pdfViewer.classList.remove('hidden');
+          downloadBtn.classList.remove('hidden');
+          downloadBtn.setAttribute('data-url', pdfPath);
+          payBtn.classList.add('hidden');
+        } else {
+          pdfViewer.classList.add('hidden');
+          downloadBtn.classList.add('hidden');
+          payBtn.classList.add('hidden');
+          alert('দুঃখিত, ম্যাপ পাওয়া যায়নি।');
+        }
+      } catch (err) {
+        pdfViewer.classList.add('hidden');
+        downloadBtn.classList.add('hidden');
+        payBtn.classList.add('hidden');
+        alert('সার্ভার সমস্যা হয়েছে।');
+      }
+    }
+
+    // ডাউনলোড বাটনে পেমেন্ট চেক
+    function downloadPDF() {
+      if (!isPaid) {
+        payBtn.classList.remove('hidden');
+        alert('ডাউনলোড করতে হলে আগে পেমেন্ট করুন।');
+        return;
+      }
+
+      const url = downloadBtn.getAttribute('data-url');
+      if (url) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = url.split('/').pop();
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    }
+
+    // পেমেন্ট ফাংশন (ডেমো)
+    function startPayment() {
+      alert('পেমেন্ট প্রসেস শুরু হবে। (এখানে বিকাশ/নগদ ইন্টিগ্রেশন আসবে)');
+      isPaid = true;
+      payBtn.classList.add('hidden');
+      alert('পেমেন্ট সফল হয়েছে! এখন ফাইল ডাউনলোড করুন।');
+    }
+
+    window.onload = loadUpazilas;
+  </script>
+</body>
+</html>
